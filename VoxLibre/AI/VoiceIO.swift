@@ -35,6 +35,12 @@ final class VoiceIO: NSObject, ObservableObject {
         synth.delegate = self
     }
 
+    /// True when audio is going to headphones (AirPods or other Bluetooth or wired ones).
+    static var headphonesConnected: Bool {
+        let ports: Set<AVAudioSession.Port> = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .headphones]
+        return AVAudioSession.sharedInstance().currentRoute.outputs.contains { ports.contains($0.portType) }
+    }
+
     // MARK: listening
     func authorize() async -> Bool {
         let s = await withCheckedContinuation { c in SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) } }

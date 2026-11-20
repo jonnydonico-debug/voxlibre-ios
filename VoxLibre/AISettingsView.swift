@@ -45,8 +45,14 @@ struct AISettingsView: View {
                     Text("Double click").tag("DOUBLE")
                     Text("Hold").tag("HOLD")
                 }
+                Picker("Talk into", selection: $s.talkMic) {
+                    Text("Auto").tag("auto")
+                    Text("AirPods mic").tag("airpods")
+                    Text("Ring mic").tag("ring")
+                }
+                Toggle("Only with headphones in", isOn: $s.requireHeadphones)
             } header: { Text("Voice") } footer: {
-                Text("For better voices, download an Enhanced or Premium voice in iOS Settings › Accessibility › Spoken Content › Voices. The ring gesture works while VoxLibre is open.")
+                Text("For better voices, download an Enhanced or Premium voice in iOS Settings › Accessibility › Spoken Content › Voices.\n\nAirPods mic: a back-and-forth conversation, only while VoxLibre is open. Ring mic: push-to-talk. Hold the ring while you speak; when you let go, the clip downloads, is transcribed and answered, also with the phone locked. Auto uses the AirPods mic while the app is open and the ring mic otherwise.")
             }
 
             Section {

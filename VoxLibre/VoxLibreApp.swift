@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Owns the long-lived objects and wires them together.
 final class AppModel {
@@ -19,8 +20,11 @@ final class AppModel {
         let e = engine, s = settings, n = notes, m = memory, a = agent
         n.log = { msg in DispatchQueue.main.async { e.log("[ai] " + msg) } }
         a.log = { msg in DispatchQueue.main.async { e.log("[agent] " + msg) } }
-        e.shouldAutoDownload = { s.autoDownload }
-        e.onDownloaded = { id in n.process(id, analyze: s.autoAnalyze) }
+        e.shouldAutoDownload = { s.autoDownload || a.awaitingRingClip }
+        e.onDownloaded = { id in
+            let tookIt = MainActor.assumeIsolated { a.takeRingClip(id) }
+            if !tookIt { n.process(id, analyze: s.autoAnalyze) }
+        }
         e.onDeletedLocal = { id in
             n.delete(id)
             m.removeAll(source: id)
@@ -28,7 +32,24 @@ final class AppModel {
         e.onGestureEvent = { g in
             guard s.voiceGesture == g else { return }
             Task { @MainActor in
-                if a.conversationActive { a.stop() } else { a.startVoice() }
+                if s.requireHeadphones && !VoiceIO.headphonesConnected {
+                    e.log("[agent] \(g) ignored: no headphones connected")
+                    return
+                }
+                // The phone's mic can't start in the background, so "auto" uses the ring's mic then.
+                let inBackground = UIApplication.shared.applicationState != .active
+                let ringMic = s.talkMic == "ring" || (s.talkMic == "auto" && inBackground)
+                if ringMic {
+                    a.startRingTurn()
+                    // The ring may have announced its clip just before the gesture was recognised.
+                    if let last = e.lastAnnounced, Date().timeIntervalSince(last.at) < 5 {
+                        e.fetchAnnounced(last.name)
+                    }
+                } else if a.conversationActive {
+                    a.stop()
+                } else {
+                    a.startVoice()
+                }
             }
         }
     }

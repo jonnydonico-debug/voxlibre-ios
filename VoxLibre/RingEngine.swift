@@ -119,6 +119,8 @@ final class RingEngine: ObservableObject {
 
     // MARK: hooks for the AI layer
     var autoQueue: [String] = []
+    /// The last new recording the ring announced (0x13), for the ring-mic talk turn.
+    var lastAnnounced: (name: String, at: Date)?
     var shouldAutoDownload: () -> Bool = { false }
     var onDownloaded: (String) -> Void = { _ in }       // recording id, .opus saved
     var onDeletedLocal: (String) -> Void = { _ in }     // recording id

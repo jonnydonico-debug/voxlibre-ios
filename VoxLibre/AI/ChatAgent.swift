@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct ChatItem: Identifiable, Codable, Equatable {
     var id = UUID()
@@ -15,6 +16,8 @@ final class ChatAgent: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var status = ""         // e.g. "Searching recordings…"
     @Published private(set) var conversationActive = false
+    /// A ring-mic talk turn is waiting for the ring's recording to arrive.
+    @Published private(set) var awaitingRingClip = false
 
     let settings: AISettings
     let memory: MemoryStore
@@ -25,6 +28,9 @@ final class ChatAgent: ObservableObject {
     private var history: [[String: Any]] = []
     private var lastActivity = Date.distantPast
     private var current: Task<Void, Never>?
+    private var ringDeadline: DispatchWorkItem?
+    private var recentClip: (id: String, at: Date)?
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
 
     private let histFile = MemoryStore.dir.appendingPathComponent("chat-history.json")
     private let itemsFile = MemoryStore.dir.appendingPathComponent("chat-items.json")
@@ -49,6 +55,10 @@ final class ChatAgent: ObservableObject {
 
     func stop() {
         conversationActive = false
+        awaitingRingClip = false
+        ringDeadline?.cancel()
+        ringDeadline = nil
+        endBackground(bgTask)
         current?.cancel()
         current = nil
         voice.cancelListening()
@@ -83,6 +93,105 @@ final class ChatAgent: ObservableObject {
             self.conversationActive = false
             self.status = ""
         }
+    }
+
+    // MARK: ring mic (push-to-talk)
+    /// The ring has no live audio stream: it records while you talk, then announces the
+    /// clip. So a ring turn waits for that clip, downloads it, transcribes it on the phone
+    /// and answers aloud. The phone's mic is never used, so this also works in the background.
+    @MainActor
+    func startRingTurn() {
+        stop()
+        beginBackground()
+        // The clip may already have arrived before the gesture was recognised.
+        if let r = recentClip, Date().timeIntervalSince(r.at) < 5 {
+            recentClip = nil
+            handleRingClip(r.id)
+            return
+        }
+        awaitingRingClip = true
+        status = "Waiting for the ring's recording…"
+        log("ring turn: waiting for the recording")
+        ringDeadline?.cancel()
+        let w = DispatchWorkItem { [weak self] in Task { @MainActor in self?.ringTimedOut() } }
+        ringDeadline = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: w)
+    }
+
+    /// Called for every downloaded recording. Returns true when it was taken as a ring turn
+    /// (so the normal recording pipeline should skip it).
+    @MainActor
+    func takeRingClip(_ id: String) -> Bool {
+        guard awaitingRingClip else {
+            recentClip = (id, Date())
+            return false
+        }
+        handleRingClip(id)
+        return true
+    }
+
+    @MainActor
+    private func ringTimedOut() {
+        guard awaitingRingClip else { return }
+        awaitingRingClip = false
+        status = ""
+        log("ring turn: no recording arrived")
+        items.append(ChatItem(role: "note", text: "No recording came from the ring."))
+        let bg = bgTask
+        current = Task { @MainActor in
+            await self.voice.say("I didn't get a recording from the ring.")
+            self.endBackground(bg)
+        }
+    }
+
+    @MainActor
+    private func handleRingClip(_ id: String) {
+        awaitingRingClip = false
+        ringDeadline?.cancel()
+        ringDeadline = nil
+        log("ring turn: got \(id)")
+        let bg = bgTask
+        current = Task { @MainActor in
+            defer { self.endBackground(bg) }
+            self.status = "Transcribing…"
+            do {
+                let wav = try await NotesStore.ensureWav(id)
+                let segs = try await Transcriber.transcribe(wav)
+                // Keep the transcript with the recording, but don't analyse a voice command.
+                var n = self.notes.notes[id] ?? RecordingNotes(id: id)
+                n.segments = segs
+                n.transcribedAt = Date()
+                self.notes.save(n)
+                let text = segs.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                self.status = ""
+                guard !Task.isCancelled else { return }
+                guard !text.isEmpty else {
+                    await self.voice.say("Sorry, I didn't catch that.")
+                    return
+                }
+                await self.turn(text, spoken: true)
+            } catch {
+                self.status = ""
+                self.log("ring turn failed: \(error.localizedDescription)")
+                self.items.append(ChatItem(role: "note", text: error.localizedDescription))
+                if !Task.isCancelled { await self.voice.say("Sorry, I couldn't hear the ring.") }
+            }
+        }
+    }
+
+    /// Ask iOS for time to finish the turn if the app is in the background.
+    private func beginBackground() {
+        endBackground(bgTask)
+        var id = UIBackgroundTaskIdentifier.invalid
+        id = UIApplication.shared.beginBackgroundTask(withName: "ring turn") { [weak self] in self?.endBackground(id) }
+        bgTask = id
+    }
+
+    /// Ends one turn's background time (a cancelled turn can't end a newer turn's).
+    private func endBackground(_ id: UIBackgroundTaskIdentifier) {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        if bgTask == id { bgTask = .invalid }
     }
 
     // MARK: one turn (may loop through tools)

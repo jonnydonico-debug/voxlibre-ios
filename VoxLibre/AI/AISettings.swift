@@ -17,6 +17,11 @@ final class AISettings: ObservableObject {
     /// Ring gesture that starts a voice chat: "off", "DOUBLE" or "HOLD".
     @Published var voiceGesture: String { didSet { d.set(voiceGesture, forKey: "voiceGesture") } }
     @Published var keepListening: Bool { didSet { d.set(keepListening, forKey: "keepListening") } }
+    /// Which mic a ring-gesture voice turn uses: "auto" (AirPods while the app is open,
+    /// the ring in the background), "airpods" or "ring".
+    @Published var talkMic: String { didSet { d.set(talkMic, forKey: "talkMic") } }
+    /// The ring gesture only starts a voice turn while headphones (e.g. AirPods) are connected.
+    @Published var requireHeadphones: Bool { didSet { d.set(requireHeadphones, forKey: "requireHeadphones") } }
     @Published var voiceId: String { didSet { d.set(voiceId, forKey: "voiceId") } }
     @Published var speechRate: Double { didSet { d.set(speechRate, forKey: "speechRate") } }
 
@@ -30,6 +35,8 @@ final class AISettings: ObservableObject {
         autoDownload = d.object(forKey: "autoDownload") as? Bool ?? true
         voiceGesture = d.string(forKey: "voiceGesture") ?? "off"
         keepListening = d.object(forKey: "keepListening") as? Bool ?? true
+        talkMic = d.string(forKey: "talkMic") ?? "auto"
+        requireHeadphones = d.object(forKey: "requireHeadphones") as? Bool ?? true
         voiceId = d.string(forKey: "voiceId") ?? ""
         speechRate = d.object(forKey: "speechRate") as? Double ?? Double(AVSpeechUtteranceDefaultSpeechRate)
     }

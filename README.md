@@ -25,10 +25,15 @@ the Claude API (`claude-opus-5-5`) using your own API key. Requires iOS 26 or la
 - **Memory**: facts the agent saves from recordings and chats, stored on the phone in
   `Application Support/VoxLibre/memory.json`. You can view, add, edit or delete them from the
   brain icon on the Agent tab.
-- **Voice**: you speak into the AirPods mic and it replies through the AirPods. It listens again
-  after each reply until you go quiet, and you can choose a ring gesture (double click or hold)
-  to start talking. The gesture only works while VoxLibre is open, because iOS doesn't let apps
-  start the mic in the background.
+- **Voice**: choose a ring gesture (double click or hold) to start talking; replies play through
+  your AirPods. By default the gesture only works while headphones are connected. Two mics:
+  - *AirPods mic*: a back-and-forth conversation that listens again after each reply until you
+    go quiet. Only while VoxLibre is open, because iOS doesn't let apps start the mic in the
+    background.
+  - *Ring mic*: push-to-talk. The ring has no live audio stream, so you hold it while you speak,
+    then the clip is downloaded, transcribed on the phone and answered. It takes a few seconds
+    longer, but it works with the phone locked. These clips get a transcript but no analysis.
+  - *Auto* (default) uses the AirPods mic while the app is open and the ring mic otherwise.
 - **House agent** (optional): see below.
 - **Refusal fallback**: Claude requests set `fallbacks: "default"`. If a safety filter declines
   a request, the API retries it on a fallback model.

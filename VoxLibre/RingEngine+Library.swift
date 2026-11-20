@@ -181,6 +181,15 @@ extension RingEngine {
         downloadingName = nil
     }
 
+    /// Download a recording the ring just announced, even when auto-download is off
+    /// (used for a ring-mic talk turn). Does nothing if it is already on the phone or queued.
+    func fetchAnnounced(_ name: String) {
+        guard connected, !FileManager.default.fileExists(atPath: localURL(name).path),
+              !autoQueue.contains(name), curFile != name else { return }
+        autoQueue.append(name)
+        if !downloading { requestList() }
+    }
+
     func requestList() {
         collecting = [:]
         sendList()
@@ -235,7 +244,10 @@ extension RingEngine {
             }
         } else if op == 0x13 {
             let f = Self.firstMatch(#"[A-Za-z0-9_]+_mono\.opus"#, in: asc) ?? "?"
-            if f != "?" { files[f] = 0 }
+            if f != "?" {
+                files[f] = 0
+                lastAnnounced = (f, Date())
+            }
             eventText = "BUTTON → new recording: \(f)"
             log("BUTTON/recording: \(f)")
             if f != "?", shouldAutoDownload(), !autoQueue.contains(f) { autoQueue.append(f) }
