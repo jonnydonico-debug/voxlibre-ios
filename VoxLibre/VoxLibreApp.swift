@@ -20,6 +20,7 @@ final class AppModel {
         let e = engine, s = settings, n = notes, m = memory, a = agent
         n.log = { msg in DispatchQueue.main.async { e.log("[ai] " + msg) } }
         a.log = { msg in DispatchQueue.main.async { e.log("[agent] " + msg) } }
+        voice.log = { msg in DispatchQueue.main.async { e.log("[voice] " + msg) } }
         e.shouldAutoDownload = { s.autoDownload || a.awaitingRingClip }
         e.onDownloaded = { id in
             let tookIt = MainActor.assumeIsolated { a.takeRingClip(id) }
@@ -30,27 +31,40 @@ final class AppModel {
             m.removeAll(source: id)
         }
         e.onGestureEvent = { g in
-            guard s.voiceGesture == g else { return }
+            let action = s.action(for: g)
+            guard action != .none else { return }
             Task { @MainActor in
-                if s.requireHeadphones && !VoiceIO.headphonesConnected {
-                    e.log("[agent] \(g) ignored: no headphones connected")
-                    return
-                }
-                // The phone's mic can't start in the background, so "auto" uses the ring's mic then.
-                let inBackground = UIApplication.shared.applicationState != .active
-                let ringMic = s.talkMic == "ring" || (s.talkMic == "auto" && inBackground)
-                if ringMic {
-                    a.startRingTurn()
-                    // The ring may have announced its clip just before the gesture was recognised.
-                    if let last = e.lastAnnounced, Date().timeIntervalSince(last.at) < 5 {
-                        e.fetchAnnounced(last.name)
-                    }
-                } else if a.conversationActive {
-                    a.stop()
-                } else {
-                    a.startVoice()
+                e.log("[button] \(g) → \(action.label)")
+                switch action {
+                case .none: break
+                case .playPause: e.musicPlayPause()
+                case .nextTrack: e.musicNext()
+                case .stopTalking: a.stop()
+                case .talk: Self.talk(e, s, a, g)
                 }
             }
+        }
+    }
+
+    @MainActor
+    private static func talk(_ e: RingEngine, _ s: AISettings, _ a: ChatAgent, _ g: String) {
+        if s.requireHeadphones && !VoiceIO.headphonesConnected {
+            e.log("[agent] \(g) ignored: no headphones connected")
+            return
+        }
+        // The phone's mic can't start in the background, so "auto" uses the ring's mic then.
+        let inBackground = UIApplication.shared.applicationState != .active
+        let ringMic = s.talkMic == "ring" || (s.talkMic == "auto" && inBackground)
+        if ringMic {
+            a.startRingTurn()
+            // The ring may have announced its clip just before the gesture was recognised.
+            if let last = e.lastAnnounced, Date().timeIntervalSince(last.at) < 5 {
+                e.fetchAnnounced(last.name)
+            }
+        } else if a.conversationActive {
+            a.stop()
+        } else {
+            a.startVoice()
         }
     }
 }

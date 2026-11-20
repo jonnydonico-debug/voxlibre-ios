@@ -5,7 +5,9 @@ import Speech
 /// Voice in and out for the agent chat.
 ///  - Listening: on-device speech recognition from the current mic (AirPods when connected),
 ///    ending automatically after a short pause.
-///  - Speaking: the reply is read sentence by sentence while it is still streaming in.
+///  - Speaking: the reply is read sentence by sentence while it is still streaming in, by
+///    OpenAI's natural voice when set up (each sentence is fetched ahead while the previous one
+///    plays), or by the on-device Apple voice — also the fallback when OpenAI can't be reached.
 ///    The audio session switches to playback while speaking so AirPods use their
 ///    high-quality (A2DP) profile rather than the call (HFP) profile.
 final class VoiceIO: NSObject, ObservableObject {
@@ -14,6 +16,7 @@ final class VoiceIO: NSObject, ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var partial = ""
     @Published var lastError: String?
+    var log: (String) -> Void = { _ in }
 
     private let settings: AISettings
     private let synth = AVSpeechSynthesizer()
@@ -28,6 +31,14 @@ final class VoiceIO: NSObject, ObservableObject {
     private var streamOpen = false
     private var pending = 0
     private var speakCont: CheckedContinuation<Void, Never>?
+
+    // OpenAI voice: sentences in order, each with its audio being fetched.
+    private var cloudQueue: [(text: String, audio: Task<Data?, Never>)] = []
+    private var pumping = false
+    private var generation = 0          // bumped by stopSpeaking() to end the playback loop
+    private var player: AVAudioPlayer?
+    private var playCont: CheckedContinuation<Void, Never>?
+    private var fallbackCont: CheckedContinuation<Void, Never>?
 
     init(settings: AISettings) {
         self.settings = settings
@@ -179,6 +190,16 @@ final class VoiceIO: NSObject, ObservableObject {
     func stopSpeaking() {
         streamOpen = false
         buffer = ""
+        generation += 1
+        pumping = false
+        cloudQueue.forEach { $0.audio.cancel() }
+        cloudQueue = []
+        player?.stop()
+        player = nil
+        playCont?.resume()
+        playCont = nil
+        fallbackCont?.resume()
+        fallbackCont = nil
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         pending = 0
         speakCont?.resume()
@@ -197,12 +218,75 @@ final class VoiceIO: NSObject, ObservableObject {
     private func speak(_ raw: String) {
         let text = Self.plain(raw)
         guard !text.isEmpty else { return }
+        if settings.useCloudVoice {
+            pending += 1
+            state = .speaking
+            let tts = settings.tts, log = self.log
+            let audio = Task<Data?, Never> {
+                do { return try await tts.speech(text) } catch {
+                    if !(error is CancellationError) { log("\(error.localizedDescription) — using the Apple voice") }
+                    return nil
+                }
+            }
+            cloudQueue.append((text, audio))
+            pumpCloud()
+            return
+        }
         let u = AVSpeechUtterance(string: text)
         u.voice = voice
         u.rate = Float(settings.speechRate)
         pending += 1
         state = .speaking
         synth.speak(u)
+    }
+
+    /// Plays the OpenAI sentences in order; a sentence whose audio failed is read by the Apple voice.
+    private func pumpCloud() {
+        guard !pumping else { return }
+        pumping = true
+        let gen = generation
+        Task { @MainActor in
+            while gen == self.generation, !self.cloudQueue.isEmpty {
+                let item = self.cloudQueue.removeFirst()
+                let data = await item.audio.value
+                guard gen == self.generation else { return }
+                if let data, let p = try? AVAudioPlayer(data: data) {
+                    self.player = p
+                    p.delegate = self
+                    await withCheckedContinuation { c in
+                        self.playCont = c
+                        if !p.play() { self.playCont = nil; c.resume() }
+                    }
+                } else {
+                    await self.fallbackSay(item.text)
+                }
+                guard gen == self.generation else { return }
+                self.player = nil
+                self.oneDone()
+            }
+            if gen == self.generation { self.pumping = false }
+        }
+    }
+
+    @MainActor
+    private func fallbackSay(_ text: String) async {
+        let u = AVSpeechUtterance(string: text)
+        u.voice = voice
+        u.rate = Float(settings.speechRate)
+        await withCheckedContinuation { c in
+            fallbackCont = c
+            synth.speak(u)
+        }
+    }
+
+    /// One sentence finished; when the reply is complete and nothing is left, wake `finish()`.
+    private func oneDone() {
+        pending = max(0, pending - 1)
+        if pending == 0 && !streamOpen {
+            if state == .speaking { state = .idle }
+            speakCont?.resume()
+            speakCont = nil
+        }
     }
 
     private func deactivate() {
@@ -253,12 +337,26 @@ extension VoiceIO: AVSpeechSynthesizerDelegate {
 
     private func utteranceDone() {
         DispatchQueue.main.async {
-            self.pending = max(0, self.pending - 1)
-            if self.pending == 0 && !self.streamOpen {
-                if self.state == .speaking { self.state = .idle }
-                self.speakCont?.resume()
-                self.speakCont = nil
+            // An Apple-voice fallback inside the OpenAI queue is counted by that queue.
+            if let c = self.fallbackCont {
+                self.fallbackCont = nil
+                c.resume()
+                return
             }
+            self.oneDone()
+        }
+    }
+}
+
+extension VoiceIO: AVAudioPlayerDelegate {
+    func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully: Bool) { playerDone(p) }
+    func audioPlayerDecodeErrorDidOccur(_ p: AVAudioPlayer, error: Error?) { playerDone(p) }
+
+    private func playerDone(_ p: AVAudioPlayer) {
+        DispatchQueue.main.async {
+            guard p === self.player, let c = self.playCont else { return }
+            self.playCont = nil
+            c.resume()
         }
     }
 }

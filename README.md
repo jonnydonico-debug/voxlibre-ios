@@ -3,8 +3,9 @@
 A SwiftUI/CoreBluetooth port of [VoxLibre](https://github.com/elvisoliveira/voxlibre)
 (the offline Android companion for the Vocci ring). Same protocol, same features:
 
-- **Ring**: device info, battery, storage, signal, button events and gestures, plus
-  an optional *single click → Play/Pause* for the Music app.
+- **Ring**: device info, battery, storage, signal, button events and gestures. On the Ring tab
+  you choose what a single click, double click and hold do: talk to the agent, stop it,
+  play/pause or skip in the Music app, or nothing.
 - **Recordings**: on-ring and downloaded clips, download, decode and play, share or
   save to Files, delete on the ring or on the phone.
 - **Logs**: live TX/RX of the BLE protocol, an "unmapped only" filter, and sharing.
@@ -13,7 +14,8 @@ A SwiftUI/CoreBluetooth port of [VoxLibre](https://github.com/elvisoliveira/voxl
 
 The ring itself never touches the cloud. The AI features are optional. With them on,
 transcription still runs on the iPhone (Apple SpeechAnalyzer), but transcripts and chats go to
-the Claude API (`claude-opus-5-5`) using your own API key. Requires iOS 26 or later.
+the Claude API (`claude-opus-5-5`) using your own API key, and, if you add an OpenAI key, spoken
+replies are voiced by OpenAI. Requires iOS 26 or later.
 
 ## AI features
 
@@ -25,8 +27,10 @@ the Claude API (`claude-opus-5-5`) using your own API key. Requires iOS 26 or la
 - **Memory**: facts the agent saves from recordings and chats, stored on the phone in
   `Application Support/VoxLibre/memory.json`. You can view, add, edit or delete them from the
   brain icon on the Agent tab.
-- **Voice**: choose a ring gesture (double click or hold) to start talking; replies play through
-  your AirPods. By default the gesture only works while headphones are connected. Two mics:
+- **Voice**: map a ring input to *Talk to the agent* (hold by default); replies play through
+  your AirPods, read by OpenAI's natural `gpt-4o-mini-tts` voice with your own OpenAI key (only the
+  reply text is sent; you can pick the voice and describe how it should sound). Without a key or
+  a connection, the on-device Apple voice reads instead. By default the gesture only works while headphones are connected. Two mics:
   - *AirPods mic*: a back-and-forth conversation that listens again after each reply until you
     go quiet. Only while VoxLibre is open, because iOS doesn't let apps start the mic in the
     background.

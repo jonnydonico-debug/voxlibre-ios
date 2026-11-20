@@ -64,9 +64,6 @@ final class RingEngine: ObservableObject {
     @Published var playingId: String?
     @Published var discovered: [DiscoveredRing] = []
     @Published var btState: CBManagerState = .unknown
-    @Published var mediaToggle = false {
-        didSet { log("play/pause " + (mediaToggle ? "ON" : "OFF")) }
-    }
 
     // MARK: config (persisted)
     let defaults = UserDefaults.standard
@@ -124,7 +121,7 @@ final class RingEngine: ObservableObject {
     var shouldAutoDownload: () -> Bool = { false }
     var onDownloaded: (String) -> Void = { _ in }       // recording id, .opus saved
     var onDeletedLocal: (String) -> Void = { _ in }     // recording id
-    var onGestureEvent: (String) -> Void = { _ in }     // "SINGLE", "DOUBLE", "HOLD"
+    var onGestureEvent: (String) -> Void = { _ in }     // "CLICK", "SINGLE", "DOUBLE", "HOLD"
 
     // MARK: gesture state
     var lastC26 = -1

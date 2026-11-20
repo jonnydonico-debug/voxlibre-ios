@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RingView: View {
     @EnvironmentObject var e: RingEngine
+    @EnvironmentObject var ai: AISettings
     @State private var picker = false
 
     var body: some View {
@@ -77,15 +78,28 @@ struct RingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
-            Toggle(isOn: $e.mediaToggle) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Single click → Play/Pause")
-                    Text("Controls the Music app").font(.caption2).foregroundStyle(Color.muted)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("RING BUTTON").font(.caption2.bold()).foregroundStyle(Color.muted)
+                ForEach(ButtonAction.inputs, id: \.gesture) { input in
+                    HStack {
+                        Text(input.label)
+                        Spacer()
+                        Picker(input.label, selection: actionBinding(input.gesture)) {
+                            ForEach(ButtonAction.allCases) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                    }
                 }
+                Text("Music actions control the Music app. If one press sets off two actions, set Single click to Nothing.")
+                    .font(.caption2).foregroundStyle(Color.muted)
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
             .background(Color(white: 0.15))
         }
+    }
+
+    private func actionBinding(_ gesture: String) -> Binding<ButtonAction> {
+        Binding(get: { ai.action(for: gesture) }, set: { ai.buttonActions[gesture] = $0.rawValue })
     }
 
     private var battColor: Color { e.battPct <= 15 ? .danger : (e.battPct <= 35 ? .amber : .lime) }

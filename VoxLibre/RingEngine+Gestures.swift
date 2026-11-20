@@ -4,10 +4,8 @@ import MediaPlayer
 /// Ring button input (port of RingGestures.java).
 ///  - the 0x26 press stream (a repeating counter while held) → PRESSED / SINGLE /
 ///    DOUBLE / HOLD — a monitor only;
-///  - a single click (0xf0 / 0x15) optionally toggles playback.
-///
-/// iOS can't inject a system-wide media key like Android's AudioManager does, so the
-/// toggle controls the system Music app player (Apple Music / local library).
+///  - a single click (0xf0 / 0x15) → CLICK.
+/// What each gesture does is chosen in the app (see ButtonAction).
 extension RingEngine {
     private static let holdMs = 0.7, doubleMs = 0.4, releaseMs = 0.3
 
@@ -78,25 +76,34 @@ extension RingEngine {
         onGestureEvent(type)
     }
 
-    /// A single click (0xf0 / 0x15): toggle Music playback when the feature is enabled.
+    /// A single click (0xf0 / 0x15): reported as the "CLICK" gesture, whose action is
+    /// chosen in the app (debounced, since both opcodes can arrive for one press).
     func singleClick() {
-        guard mediaToggle else {
-            log("single click (play/pause feature off)")
-            return
-        }
         let now = Date().timeIntervalSince1970
         if now - lastMediaKey < 0.4 {
             log("click ignored (debounce)")
             return
         }
         lastMediaKey = now
+        gestureText = "Last gesture: CLICK"
+        onGestureEvent("CLICK")
+    }
+
+    // MARK: Music app control
+    /// iOS can't send a system-wide media key, so these control the Music app's player.
+    func musicPlayPause() {
         let mp = MPMusicPlayerController.systemMusicPlayer
         if mp.playbackState == .playing {
             mp.pause()
-            log("PAUSE sent to Music (single click)")
+            log("PAUSE sent to Music")
         } else {
             mp.play()
-            log("PLAY sent to Music (single click)")
+            log("PLAY sent to Music")
         }
+    }
+
+    func musicNext() {
+        MPMusicPlayerController.systemMusicPlayer.skipToNextItem()
+        log("NEXT sent to Music")
     }
 }

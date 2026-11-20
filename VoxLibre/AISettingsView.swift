@@ -27,7 +27,27 @@ struct AISettingsView: View {
             }
 
             Section {
-                Picker("Voice", selection: $s.voiceId) {
+                Picker("Reads replies", selection: $s.voiceEngine) {
+                    Text("Natural (OpenAI)").tag("openai")
+                    Text("On-device (Apple)").tag("apple")
+                }
+                if s.voiceEngine == "openai" {
+                    SecureField("OpenAI API key (sk-…)", text: $s.openAIKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Picker("Voice", selection: $s.ttsVoice) {
+                        ForEach(OpenAITTS.voices, id: \.self) { Text($0.capitalized).tag($0) }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("How it should sound").font(.caption).foregroundStyle(Color.muted)
+                        TextField("e.g. warm, relaxed, a little slower", text: $s.ttsStyle, axis: .vertical)
+                            .lineLimit(2...5)
+                    }
+                    if s.ttsStyle != OpenAITTS.defaultStyle {
+                        Button("Reset to the default style") { s.ttsStyle = OpenAITTS.defaultStyle }
+                    }
+                }
+                Picker(s.voiceEngine == "openai" ? "Offline voice" : "Voice", selection: $s.voiceId) {
                     Text("Automatic").tag("")
                     ForEach(VoiceIO.voices, id: \.identifier) { v in
                         Text("\(v.name) (\(Self.quality(v)))").tag(v.identifier)
@@ -38,21 +58,23 @@ struct AISettingsView: View {
                     Slider(value: $s.speechRate, in: Double(AVSpeechUtteranceMinimumSpeechRate)...Double(AVSpeechUtteranceMaximumSpeechRate) * 0.75)
                     Image(systemName: "hare").foregroundStyle(Color.muted)
                 }
-                Button("Play a sample") { Task { await voice.say("Hi! This is how I'll sound in your AirPods.") } }
+                Button("Play a sample") { Task { await voice.say("Hey! This is how I'll sound in your AirPods. Hold the ring whenever you want to talk.") } }
+            } header: { Text("Voice") } footer: {
+                Text(s.voiceEngine == "openai"
+                     ? "Replies are read by OpenAI's \(OpenAITTS.model) with your own key (stored in the Keychain). Only the reply text is sent to OpenAI. Without a key, or when OpenAI can't be reached, the offline Apple voice reads instead; the speed slider applies to it only."
+                     : "For better Apple voices, download an Enhanced or Premium voice in iOS Settings › Accessibility › Spoken Content › Voices.")
+            }
+
+            Section {
                 Toggle("Keep listening after replies", isOn: $s.keepListening)
-                Picker("Ring gesture to talk", selection: $s.voiceGesture) {
-                    Text("Off").tag("off")
-                    Text("Double click").tag("DOUBLE")
-                    Text("Hold").tag("HOLD")
-                }
                 Picker("Talk into", selection: $s.talkMic) {
                     Text("Auto").tag("auto")
                     Text("AirPods mic").tag("airpods")
                     Text("Ring mic").tag("ring")
                 }
                 Toggle("Only with headphones in", isOn: $s.requireHeadphones)
-            } header: { Text("Voice") } footer: {
-                Text("For better voices, download an Enhanced or Premium voice in iOS Settings › Accessibility › Spoken Content › Voices.\n\nAirPods mic: a back-and-forth conversation, only while VoxLibre is open. Ring mic: push-to-talk. Hold the ring while you speak; when you let go, the clip downloads, is transcribed and answered, also with the phone locked. Auto uses the AirPods mic while the app is open and the ring mic otherwise.")
+            } header: { Text("Talking") } footer: {
+                Text("Choose which ring input talks to the agent on the Ring tab.\n\nAirPods mic: a back-and-forth conversation, only while VoxLibre is open. Ring mic: push-to-talk. Hold the ring while you speak; when you let go, the clip downloads, is transcribed and answered, also with the phone locked. Auto uses the AirPods mic while the app is open and the ring mic otherwise.")
             }
 
             Section {
